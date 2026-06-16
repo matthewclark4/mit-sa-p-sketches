@@ -38,6 +38,17 @@ let maxDepth = 8;
 let minRatio = 0;
 let mode = 'v2';
 
+// ── V7–V10: extra logo versions ───────────────────────────────────────────────
+const EXTRA_LOGOS = [
+    { src: 'images/logo-2.svg', w: 1310.19, h: 451.87,  amp: 0.50, stopP: 0.20 }, // v7
+    { src: 'images/logo-3.svg', w: 1052.33, h: 296.52,  amp: 0.50, stopP: 0.20 }, // v8
+    { src: 'images/logo-5.svg', w: 1057.68, h: 267.80,  amp: 0.50, stopP: 0.20 }, // v9
+    { src: 'images/logo-6.svg', w: 1711.31, h: 1315.86, amp: 0.50, stopP: 0.20 }, // v10
+];
+let extraLogos = EXTRA_LOGOS.map(() => ({ el: new Image(), loaded: false }));
+let v10W = 1.0, v10H = 1.0;
+let v10Panel = null;
+
 function setup() {
     frameRate(30);
     canvas = createCanvas(window.innerWidth, window.innerHeight);
@@ -52,6 +63,11 @@ function setup() {
         img.src = src;
     });
 
+    EXTRA_LOGOS.forEach((def, i) => {
+        extraLogos[i].el.onload = () => { extraLogos[i].loaded = true; };
+        extraLogos[i].el.src = def.src;
+    });
+
     buildUI();
 }
 
@@ -63,6 +79,7 @@ function draw() {
     if (tt % 600 == 0) ran = Math.random() * 10;
 
     if (mode === 'v3' || mode === 'v4') return;
+    if (mode === 'v7' || mode === 'v8' || mode === 'v9' || mode === 'v10') { drawExtraLogo(); return; }
     let isV56 = mode === 'v5' || mode === 'v6';
     background((mode === 'v1' || (isV56 && !v5UseLogo)) ? 0 : 255);
     if ((mode === 'v2' || mode === 'v2i' || (isV56 && v5UseLogo)) && !svgLoaded) return;
@@ -376,6 +393,74 @@ function splitLogoImages(x, y, w, h, ix, iy, iw, ih, n, nodeId) {
     } else {
         splitLogoImages(x, y,    w, hh,  ix, iy,     iw, ihh,  n+1, nodeId*2+0);
         splitLogoImages(x, y+hh, w, hh2, ix, iy+ihh, iw, ihh2, n+1, nodeId*2+1);
+    }
+}
+
+// ── V7–V10: extra logo versions ───────────────────────────────────────────────
+
+const EXTRA_MODE_IDX = { v7: 0, v8: 1, v9: 2, v10: 3 };
+
+function drawExtraLogo() {
+    let li = EXTRA_MODE_IDX[mode];
+    let logo = extraLogos[li];
+    let def  = EXTRA_LOGOS[li];
+    background(mode === 'v7' ? 0 : 255);
+    if (!logo.loaded) return;
+    if (mode === 'v7') {
+        let scale = Math.min(canvas.width * 0.65 / def.w, canvas.height * 0.65 / def.h);
+        let lw = def.w * scale, lh = def.h * scale;
+        let lx = (canvas.width - lw) / 2, ly = (canvas.height - lh) / 2;
+        splitLogoExtra(li, lx, ly, lw, lh, 0, 0, def.w, def.h, 0, 1);
+    } else if (mode === 'v10') {
+        let rw = canvas.width  * v10W;
+        let rh = canvas.height * v10H;
+        splitLogoExtra(li, (canvas.width - rw) / 2, (canvas.height - rh) / 2, rw, rh, 0, 0, def.w, def.h, 0, 1);
+    } else {
+        splitLogoExtra(li, 0, 0, canvas.width, canvas.height, 0, 0, def.w, def.h, 0, 1);
+    }
+}
+
+function drawRegionExtra(li, x, y, w, h, ix, iy, iw, ih) {
+    if (w < 0.5 || h < 0.5 || iw < 0.01 || ih < 0.01) return;
+    let def = EXTRA_LOGOS[li];
+    let scaleX = w / iw, scaleY = h / ih;
+    let ctx = drawingContext;
+    ctx.save();
+    ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+    if (li === 0) ctx.filter = 'invert(1)'; // v7: white logo on black bg
+    ctx.drawImage(extraLogos[li].el,
+        x - ix * scaleX, y - iy * scaleY,
+        def.w * scaleX,  def.h * scaleY);
+    ctx.filter = 'none';
+    ctx.restore();
+}
+
+function splitLogoExtra(li, x, y, w, h, ix, iy, iw, ih, n, nodeId) {
+    randomSeed(nodeId + floor(ran * 100));
+    let { amp, stopP } = EXTRA_LOGOS[li];
+    if ((random() < stopP && n > 3) || n > maxDepth) {
+        drawRegionExtra(li, x, y, w, h, ix, iy, iw, ih);
+    } else {
+        let crx = 0.5 + amp * Math.sin(tt * (0.01 + n * 0.01) + n * 50);
+        crx = Math.max(Math.min(crx, 1 - minRatio), minRatio);
+        let cry = 0.5 + amp * Math.cos(tt * (0.01 + n * 0.01) + n * 9930);
+        cry = Math.max(Math.min(cry, 1 - minRatio), minRatio);
+        let ww = w*crx,   ww2 = w*(1-crx);
+        let hh = h*cry,   hh2 = h*(1-cry);
+        let iww = iw*0.5, iww2 = iw*0.5;
+        let ihh = ih*0.5, ihh2 = ih*0.5;
+        if (n <= 1) {
+            splitLogoExtra(li, x,    y,    ww,  hh,  ix,     iy,     iww,  ihh,  n+1, nodeId*4+0);
+            splitLogoExtra(li, x+ww, y,    ww2, hh,  ix+iww, iy,     iww2, ihh,  n+1, nodeId*4+1);
+            splitLogoExtra(li, x,    y+hh, ww,  hh2, ix,     iy+ihh, iww,  ihh2, n+1, nodeId*4+2);
+            splitLogoExtra(li, x+ww, y+hh, ww2, hh2, ix+iww, iy+ihh, iww2, ihh2, n+1, nodeId*4+3);
+        } else if (nodeId % 2 == 0) {
+            splitLogoExtra(li, x,    y, ww,  h, ix,     iy, iww,  ih, n+1, nodeId*2+0);
+            splitLogoExtra(li, x+ww, y, ww2, h, ix+iww, iy, iww2, ih, n+1, nodeId*2+1);
+        } else {
+            splitLogoExtra(li, x, y,    w, hh,  ix, iy,     iw, ihh,  n+1, nodeId*2+0);
+            splitLogoExtra(li, x, y+hh, w, hh2, ix, iy+ihh, iw, ihh2, n+1, nodeId*2+1);
+        }
     }
 }
 
@@ -701,7 +786,7 @@ function buildUI() {
         padding: '3px 6px', fontFamily: 'monospace', fontSize: '10px',
         cursor: 'pointer', width: '100%'
     });
-    [['v1 - grid','v1'],['v2 - logo','v2'],['v2 - images','v2i'],['v3 - 3d','v3'],['v4 - 3d logo','v4'],['v5 - focus','v5'],['v6 - hands','v6']].forEach(([label, val]) => {
+    [['v1 - grid','v1'],['v2 - logo','v2'],['v2 - images','v2i'],['v3 - 3d','v3'],['v4 - 3d logo','v4'],['v5 - focus','v5'],['v6 - hands','v6'],['v7 - logo 2','v7'],['v8 - logo 3','v8'],['v9 - logo 5','v9'],['v10 - logo 6','v10']].forEach(([label, val]) => {
         let opt = document.createElement('option');
         opt.value = val; opt.textContent = label;
         if (val === mode) opt.selected = true;
@@ -720,6 +805,7 @@ function buildUI() {
             cellCtrl.setValue(0.45);
         }
         if (mode === 'v6') setupHandTracking();
+        v10Panel.style.display = (mode === 'v10') ? 'flex' : 'none';
     });
     panel.appendChild(sel);
 
@@ -820,6 +906,19 @@ function buildUI() {
     sel.addEventListener('change', () => {
         v5Panel.style.display = (mode === 'v5' || mode === 'v6') ? 'flex' : 'none';
     });
+
+    // ── v10 width/height sliders (bottom-left, separate panel) ──────────────
+    v10Panel = document.createElement('div');
+    css(v10Panel, {
+        position: 'fixed', bottom: '16px', left: '16px', zIndex: '10',
+        display: 'none', flexDirection: 'column', gap: '6px',
+        background: 'rgba(200,200,200,0.85)', padding: '10px 12px',
+        borderRadius: '10px', fontFamily: 'monospace', fontSize: '10px',
+        color: '#222', userSelect: 'none', width: '130px'
+    });
+    addSliderRow(v10Panel, 'width',  0.1, 1.0, v10W, 0.01, v => { v10W = v; });
+    addSliderRow(v10Panel, 'height', 0.1, 1.0, v10H, 0.01, v => { v10H = v; });
+    document.body.appendChild(v10Panel);
 }
 
 function addSliderRow(parent, label, min, max, val, step, onChange) {

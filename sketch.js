@@ -80,6 +80,7 @@ function draw() {
 
     if (mode === 'v3' || mode === 'v4') return;
     if (mode === 'v7' || mode === 'v8' || mode === 'v9' || mode === 'v10') { drawExtraLogo(); return; }
+    if (mode === 'v11') { drawV11(); return; }
     let isV56 = mode === 'v5' || mode === 'v6';
     background((mode === 'v1' || (isV56 && !v5UseLogo)) ? 0 : 255);
     if ((mode === 'v2' || mode === 'v2i' || (isV56 && v5UseLogo)) && !svgLoaded) return;
@@ -464,6 +465,117 @@ function splitLogoExtra(li, x, y, w, h, ix, iy, iw, ih, n, nodeId) {
     }
 }
 
+// ── V11: Three.js z-depth logo grid ──────────────────────────────────────────
+
+let v11El = null, v11Renderer = null, v11Scene = null, v11Camera = null;
+let v11Pool = [], v11CellCount = 0;
+const V11_POOL_SIZE = 1500;
+let v11Tex = null, v11Ready = false;
+
+function setupV11() {
+    if (v11Ready) return;
+    if (!extraLogos[0].loaded) return;
+
+    let svgDef = EXTRA_LOGOS[0];
+    let texW = 2048, texH = Math.max(1, Math.round(2048 * svgDef.h / svgDef.w));
+    let oc = document.createElement('canvas');
+    oc.width = texW; oc.height = texH;
+    let octx = oc.getContext('2d');
+    octx.fillStyle = '#000';
+    octx.fillRect(0, 0, texW, texH);
+    octx.filter = 'invert(1)';
+    octx.drawImage(extraLogos[0].el, 0, 0, texW, texH);
+    octx.filter = 'none';
+    v11Tex = new THREE.CanvasTexture(oc);
+
+    v11El = document.createElement('canvas');
+    css(v11El, { position: 'fixed', top: '0', left: '0', width: '100%', height: '100%', display: 'none', pointerEvents: 'none', zIndex: '5' });
+    document.body.appendChild(v11El);
+
+    v11Renderer = new THREE.WebGLRenderer({ canvas: v11El, antialias: true });
+    v11Renderer.setSize(window.innerWidth, window.innerHeight);
+    v11Renderer.setPixelRatio(window.devicePixelRatio || 1);
+
+    v11Scene = new THREE.Scene();
+    v11Scene.background = new THREE.Color(0x000000);
+
+    let fov = 60;
+    let d = (window.innerHeight / 2) / Math.tan((fov / 2) * Math.PI / 180);
+    v11Camera = new THREE.PerspectiveCamera(fov, window.innerWidth / window.innerHeight, 1, d * 10);
+    v11Camera.position.set(0, 0, d);
+
+    for (let i = 0; i < V11_POOL_SIZE; i++) {
+        let geo = new THREE.PlaneGeometry(1, 1);
+        let mat = new THREE.MeshBasicMaterial({ map: v11Tex });
+        let mesh = new THREE.Mesh(geo, mat);
+        mesh.visible = false;
+        v11Scene.add(mesh);
+        v11Pool.push({ mesh, geo });
+    }
+
+    v11Ready = true;
+    if (mode === 'v11') v11El.style.display = 'block';
+}
+
+function drawV11() {
+    if (!v11Ready) { setupV11(); return; }
+    v11CellCount = 0;
+    let def = EXTRA_LOGOS[0];
+    let scale = Math.min(canvas.width * 0.65 / def.w, canvas.height * 0.65 / def.h);
+    let lw = def.w * scale, lh = def.h * scale;
+    let lx = (canvas.width - lw) / 2, ly = (canvas.height - lh) / 2;
+    collectV11(lx, ly, lw, lh, 0, 0, def.w, def.h, 0, 1);
+    for (let i = v11CellCount; i < v11Pool.length; i++) v11Pool[i].mesh.visible = false;
+    v11Renderer.render(v11Scene, v11Camera);
+}
+
+function collectV11(x, y, w, h, ix, iy, iw, ih, n, nodeId) {
+    randomSeed(nodeId + floor(ran * 100));
+    let { amp, stopP } = EXTRA_LOGOS[0];
+    if ((random() < stopP && n > 3) || n > maxDepth) {
+        if (v11CellCount >= V11_POOL_SIZE) return;
+        let { mesh, geo } = v11Pool[v11CellCount++];
+        mesh.visible = true;
+
+        let cx = (x + w / 2) - canvas.width / 2;
+        let cy = canvas.height / 2 - (y + h / 2);
+        let cz = 200 * Math.sin(tt * 0.008 + nodeId * 0.73);
+        mesh.position.set(cx, cy, cz);
+        mesh.scale.set(w, h, 1);
+
+        let def = EXTRA_LOGOS[0];
+        let u0 = ix / def.w, u1 = (ix + iw) / def.w;
+        let v0 = 1 - (iy + ih) / def.h, v1 = 1 - iy / def.h;
+        let uv = geo.attributes.uv.array;
+        uv[0] = u0; uv[1] = v1;
+        uv[2] = u1; uv[3] = v1;
+        uv[4] = u0; uv[5] = v0;
+        uv[6] = u1; uv[7] = v0;
+        geo.attributes.uv.needsUpdate = true;
+        return;
+    }
+    let crx = 0.5 + amp * Math.sin(tt * (0.01 + n * 0.01) + n * 50);
+    crx = Math.max(Math.min(crx, 1 - minRatio), minRatio);
+    let cry = 0.5 + amp * Math.cos(tt * (0.01 + n * 0.01) + n * 9930);
+    cry = Math.max(Math.min(cry, 1 - minRatio), minRatio);
+    let ww = w * crx, ww2 = w * (1 - crx);
+    let hh = h * cry, hh2 = h * (1 - cry);
+    let iww = iw * 0.5, iww2 = iw * 0.5;
+    let ihh = ih * 0.5, ihh2 = ih * 0.5;
+    if (n <= 1) {
+        collectV11(x,    y,    ww,  hh,  ix,     iy,     iww,  ihh,  n+1, nodeId*4+0);
+        collectV11(x+ww, y,    ww2, hh,  ix+iww, iy,     iww2, ihh,  n+1, nodeId*4+1);
+        collectV11(x,    y+hh, ww,  hh2, ix,     iy+ihh, iww,  ihh2, n+1, nodeId*4+2);
+        collectV11(x+ww, y+hh, ww2, hh2, ix+iww, iy+ihh, iww2, ihh2, n+1, nodeId*4+3);
+    } else if (nodeId % 2 == 0) {
+        collectV11(x,    y, ww,  h, ix,     iy, iww,  ih, n+1, nodeId*2+0);
+        collectV11(x+ww, y, ww2, h, ix+iww, iy, iww2, ih, n+1, nodeId*2+1);
+    } else {
+        collectV11(x, y,    w, hh,  ix, iy,     iw, ihh,  n+1, nodeId*2+0);
+        collectV11(x, y+hh, w, hh2, ix, iy+ihh, iw, ihh2, n+1, nodeId*2+1);
+    }
+}
+
 // ── V3: Three.js 3D grid ─────────────────────────────────────────────────────
 
 let threeCanvas, threeRenderer, threeScene, threeCamera;
@@ -786,7 +898,7 @@ function buildUI() {
         padding: '3px 6px', fontFamily: 'monospace', fontSize: '10px',
         cursor: 'pointer', width: '100%'
     });
-    [['v1 - grid','v1'],['v2 - logo','v2'],['v2 - images','v2i'],['v3 - 3d','v3'],['v4 - 3d logo','v4'],['v5 - focus','v5'],['v6 - hands','v6'],['v7 - logo 2','v7'],['v8 - logo 3','v8'],['v9 - logo 5','v9'],['v10 - logo 6','v10']].forEach(([label, val]) => {
+    [['v1 - grid','v1'],['v2 - logo','v2'],['v2 - images','v2i'],['v3 - 3d','v3'],['v4 - 3d logo','v4'],['v5 - focus','v5'],['v6 - hands','v6'],['v7 - logo 2','v7'],['v8 - logo 3','v8'],['v9 - logo 5','v9'],['v10 - logo 6','v10'],['v11 - depth','v11']].forEach(([label, val]) => {
         let opt = document.createElement('option');
         opt.value = val; opt.textContent = label;
         if (val === mode) opt.selected = true;
@@ -805,6 +917,8 @@ function buildUI() {
             cellCtrl.setValue(0.45);
         }
         if (mode === 'v6') setupHandTracking();
+        if (mode === 'v11') setupV11();
+        if (v11El) v11El.style.display = (mode === 'v11') ? 'block' : 'none';
         v10Panel.style.display = (mode === 'v10') ? 'flex' : 'none';
     });
     panel.appendChild(sel);
